@@ -8,7 +8,7 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define BTN_PREV_PIN 9
 #define BTN_NXT_PIN 5
 #define BTN_OUT_PIN 6
-#define WELCOME_TXT "Welcome, Bogdan!"
+#define WELCOME_TXT "Welcome, name!"
 #define DEBUG_PRINT 0
 #define CURRENT_LAYOUT KeyboardLayout_de_DE
 
