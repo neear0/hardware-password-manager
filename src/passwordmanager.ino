@@ -1,19 +1,21 @@
-#include <Keyboard.h>
-#include <KeyboardLayout.h>
-#include <Keyboard_de_DE.h>
+#include <KeyboardUTF8.h>
+#include <languages/Keyboard_CZ.h>     
+#include <languages/Keyboard_DE.h>  
 #include <LiquidCrystal_I2C.h>
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-#define BTN_PREV_PIN 9
-#define BTN_NXT_PIN 5
-#define BTN_OUT_PIN 6
-#define WELCOME_TXT "Welcome, name!"
-#define DEBUG_PRINT 0
-#define CURRENT_LAYOUT KeyboardLayout_de_DE
+// Button pins
+#define btn_prev_pin 9
+#define btn_nxt_pin 5
+#define btn_out_pin 6
 
-// For GER Layout: character ^ and ` is not supported!
-// Check your layout here: https://github.com/arduino-libraries/Keyboard/tree/master/src
+#define welcome_txt "Welcome, name!"
+#define debug_print_enabled 0
+
+// Layouts
+#define layout_cz Keyboard_CZ
+#define layout_de Keyboard_DE
 
 constexpr char* passwords[] = {
   "8TsA46gT9P@KNrG9",
@@ -21,175 +23,153 @@ constexpr char* passwords[] = {
   "asd"
 };
 
-constexpr char* alias[] = {
+constexpr char* aliases[] = {
   "test password",
   "char test",
   "asd"
 };
 
-void DebugPrint(String message) {
-#if DEBUG_PRINT
+void debug_print(const String& message) {
+#if debug_print_enabled
   if (Serial) {
-    Serial.println(message.c_str());
+    Serial.println(message);
   }
 #endif
 }
 
-void DisplayPage(String tabname, bool showLeft = true, bool showRight = true) {
+void display_page(const String& tabname, bool show_left = true, bool show_right = true) {
   lcd.setCursor(0, 1);
-  if (showLeft)
-    lcd.print(" < ");
+  if (show_left) lcd.print(" < ");
 
-  int tabNameLength = strlen(tabname.c_str());
+  int len = tabname.length();
+  if (len > 11) len = 10;
 
-  if (tabNameLength > 11)
-    tabNameLength = 10;
-
-  int center = 8 - tabNameLength / 2;
-
+  int center = 8 - len / 2;
   lcd.setCursor(center, 1);
   lcd.print(tabname);
 
   lcd.setCursor(13, 1);
-  if (showRight)
-    lcd.print(" > ");
+  if (show_right) lcd.print(" > ");
 }
 
-void PrintLCDCentered(const char* msg, int line = 0) {
-  int messageLength = strlen(msg);
-
-  if (messageLength > 17)
-    messageLength = 16;
-
-  int center = 8 - messageLength / 2;
+void print_lcd_centered(const char* msg, int line = 0) {
+  int len = strlen(msg);
+  if (len > 17) len = 16;
+  int center = 8 - len / 2;
 
   lcd.setCursor(center, line);
   lcd.print(msg);
 }
 
-void runTest();
+void keyboard_out(const String& message) {
+  KeyboardUTF8.releaseAll();
+  for (char c : message) {
+    KeyboardUTF8.press(c);
+    delay(150);
+    KeyboardUTF8.release(c);
+  }
+}
+
+void do_password_out(int current_page) {
+  if (current_page <= 0) {
+    lcd.clear();
+    print_lcd_centered("Error, no pswrd", 0);
+    print_lcd_centered("select with < >", 1);
+    return;
+  }
+
+  int count = sizeof(passwords) / sizeof(passwords[0]);
+  if (current_page - 1 >= count) return;
+
+  keyboard_out(passwords[current_page - 1]);
+}
+
+bool check_button_debounced(int pin) {
+  static unsigned long last_press[3] = {0,0,0};
+  const unsigned long debounce_time = 200;
+
+  int idx = (pin == btn_prev_pin) ? 0 : (pin == btn_nxt_pin) ? 1 : 2;
+  if (digitalRead(pin) == LOW) {
+    if (millis() - last_press[idx] > debounce_time) {
+      last_press[idx] = millis();
+      return true;
+    }
+  }
+  return false;
+}
+
+void draw_page(int current_page) {
+  lcd.setCursor(0, 0);
+  int count = sizeof(passwords) / sizeof(passwords[0]);
+
+  if (current_page == 0) {
+    print_lcd_centered(welcome_txt, 0);
+    display_page("Home", false, count > 0);
+    return;
+  }
+  if (current_page == -1) {
+    print_lcd_centered("Malformed Data!");
+    print_lcd_centered("size: alias!=pw", 1);
+    return;
+  }
+
+  int sel = current_page - 1;
+  print_lcd_centered(aliases[sel], 0);
+  display_page("Page: " + String(current_page), current_page != 0, current_page < count);
+}
 
 void setup() {
   lcd.init();
   lcd.backlight();
-  lcd.setCursor(0, 0);
-  PrintLCDCentered("Initializing..");
+  print_lcd_centered("Initializing..", 0);
 
-  Keyboard.begin(CURRENT_LAYOUT);  // Become a Keyboard with German Keyboard Layout
+  KeyboardUTF8.begin(layout_cz); 
   delay(1500);
 
-  pinMode(BTN_PREV_PIN, INPUT_PULLUP);
-  pinMode(BTN_NXT_PIN, INPUT_PULLUP);
-  pinMode(BTN_OUT_PIN, INPUT_PULLUP);
+  pinMode(btn_prev_pin, INPUT_PULLUP);
+  pinMode(btn_nxt_pin, INPUT_PULLUP);
+  pinMode(btn_out_pin, INPUT_PULLUP);
 
   delay(500);
 
-  PrintLCDCentered(WELCOME_TXT);
-  DisplayPage("Home");
-}
-
-void drawPage(int currentPage) {
-  lcd.setCursor(0, 0);
-  static int sizeOfPasswords = sizeof(passwords) / sizeof(passwords[0]);
-
-  if (currentPage == 0) {
-    PrintLCDCentered(WELCOME_TXT);
-    DisplayPage("Home", currentPage != 0);
-    return;
-  }
-
-  //handle error pages
-  switch (currentPage) {
-    case -1:
-      PrintLCDCentered("Malformed Data!");
-      PrintLCDCentered("size: alias!=pw", 1);
-      return;
-      break;
-    default:
-      break;
-  }
-
-  int selectedPassword = currentPage - 1;
-
-  PrintLCDCentered(alias[selectedPassword]);
-  DisplayPage("Page: " + String(currentPage), currentPage != 0, currentPage < sizeOfPasswords);
-}
-
-// DO NOT REPLACE WITH Keyboard.print() or .println() or .write or any of that !!!
-// THE MENTIONED FUNCTIONS DO NOT WORK, THE DO CUM ENTATION IS LYING!!!
-// Pasted from https://github.com/arduino-libraries/Keyboard/blob/25ab3cdfd2d2cf93f2315fd4c13ef22c9622ba50/src/Keyboard.cpp#L190
-
-void KeyboardOut(String message) {
-  Keyboard.releaseAll();
-  for (int i = 0; i < message.length(); i++) {
-    char current = message.charAt(i);
-    Keyboard.press(current);  // Keydown
-    delay(150);
-    Keyboard.release(current);  // Keyup
-  }
-}
-
-void DoPasswordOut(int currentPage) {
-  if (currentPage <= 0){
-    lcd.clear();
-    PrintLCDCentered("Error, no pswrd");
-    PrintLCDCentered("select with < >", 1);
-    return;
-  }
-
-  static int sizeOfPasswords = sizeof(passwords) / sizeof(passwords[0]);
-  if (currentPage - 1 > sizeOfPasswords)
-    return;
-
-  KeyboardOut(passwords[currentPage - 1]);  // Output the stored password
-}
-
-bool CheckButton(int pin) {
-  return digitalRead(pin) == LOW;
+  print_lcd_centered(welcome_txt, 0);
+  display_page("Home");
 }
 
 void loop() {
-  static int currentPage = 0;
-  static int lastPage = 0;
-  static int sizeOfAliases = sizeof(alias) / sizeof(alias[0]);
-  static int sizeOfPasswords = sizeof(passwords) / sizeof(passwords[0]);
+  static int current_page = 0, last_page = -99;
+  int pw_count = sizeof(passwords) / sizeof(passwords[0]);
+  int alias_count = sizeof(aliases) / sizeof(aliases[0]);
 
-  if (sizeOfPasswords != sizeOfAliases) {
-    currentPage = -1;
-  }
+  if (pw_count != alias_count) current_page = -1;
 
-  if (currentPage != lastPage) {
-    //we changed pages, clear page to avoid artifacts
-    DebugPrint("changed pages, clearing lcd");
+  if (current_page != last_page) {
+    debug_print("changed pages, clearing lcd");
     lcd.clear();
-    lastPage = currentPage;
+    last_page = current_page;
   }
 
-  drawPage(currentPage);
+  draw_page(current_page);
 
-  if (CheckButton(BTN_NXT_PIN)) {
-    currentPage++;
-    DebugPrint("page + 1");
-    delay(250);
-  } else if (CheckButton(BTN_PREV_PIN)) {
-    DebugPrint("page - 1");
-    currentPage--;
-    delay(250);
+  if (check_button_debounced(btn_nxt_pin)) {
+    current_page++;
+    debug_print("page + 1");
+  } else if (check_button_debounced(btn_prev_pin)) {
+    current_page--;
+    debug_print("page - 1");
   }
 
-  if (currentPage > sizeOfPasswords) {
-    currentPage = 1;
-    DebugPrint("page = 1");
-  } else if (currentPage < 0) {
-    currentPage = sizeOfPasswords;
-    DebugPrint("page clamp to max size");
-  }
+  if (current_page > pw_count)
+    current_page = 1;
+  else if (current_page < 1)
+    current_page = pw_count;
 
-
-  if (CheckButton(BTN_OUT_PIN)) {
+  if (check_button_debounced(btn_out_pin)) {
     lcd.clear();
-    PrintLCDCentered("Printing..");
-    DoPasswordOut(currentPage);
+    print_lcd_centered("Printing..");
+    do_password_out(current_page);
+    delay(1000);
     lcd.clear();
+    draw_page(current_page);
   }
 }
